@@ -110,7 +110,7 @@ void PCD8544::putChar(uint8_t c)
 	if(cursorY>=84){
 		return ;
 	}
-	if(c>=32 and c<=127) {
+	if(c>=32/* and c<=127*/) {
 		
 		bank=cursorX/8;	
 		off=cursorX%8;	
@@ -134,8 +134,11 @@ void PCD8544::putChar(uint8_t c)
 			if(mode==OVERWRITE) {
 				newval=val&~(uint8_t)((uint16_t)(mask>>8));
 				newval|=(uint8_t)((uint16_t)(data>>8));
-			} else {
+			} else if (mode==XOR) {
 				newval=val^(uint8_t)((uint16_t)(data>>8));
+			} else {
+				newval=val&~(uint8_t)((uint16_t)(mask>>8));
+				newval|=~(uint8_t)((uint16_t)(data>>8));
 			}
 			if(newval!=val) {
 				PCD8544_FB[5-bank][cursorY+i]=newval;

@@ -1,6 +1,6 @@
 include Arduino.mk
 
-LIBS=core SPI DallasTemperature OneWire
+LIBS=core SPI DallasTemperature OneWire EEPROM
 #PORT=/dev/ttyUSB0
 PORT=COM26
 CPU=atmega328p
@@ -23,6 +23,6 @@ include lib.mk
 CPPFLAGS+=-I. -g -Os -w -fno-exceptions -ffunction-sections -fdata-sections -MMD
 
 font5x8.o:font5x8.h
-main.o:PCD8544.o BIGSERIF.o font5x8.o libcore.a libDallasTemperature.a libOneWire.a libSPI.a
-main.elf: main.o PCD8544.o BIGSERIF.o font5x8.o libcore.a libDallasTemperature.a libOneWire.a libSPI.a
+main.o:PCD8544.o BIGSERIF.o font5x8.o libcore.a libDallasTemperature.a libOneWire.a libSPI.a libEEPROM.a
+main.elf: main.o PCD8544.o BIGSERIF.o font5x8.o libcore.a libDallasTemperature.a libOneWire.a libSPI.a libEEPROM.a
 

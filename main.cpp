@@ -2,6 +2,7 @@
 #include <math.h>
 #include <OneWire.h>
 #include <DallasTemperature.h>
+#include <EEPROM.h>
 #include <PCD8544.h>
 //#include <HardwareSerial.h>
 #include <string.h>
@@ -23,161 +24,291 @@ DallasTemperature T3(&W3);
 DallasTemperature T4(&W4);
 float t1,t2,t3,t4;
 
-#define DL_Timer1hz 15625	//Hz 16Mhz with 1024 prescale.
-#define DL_period  1000		//Data Loggin (attempt) period in milliseconds
-//#define DL_period  TEMP_CONVERSION_DELAY+10		//Data Loggin (attempt) period in milliseconds
-//volatile unsigned int DL_periodOverflows = 0;
-volatile unsigned int TS_conversionOverflows = 0;
-/*void DL_startPeriod(void)
-{
-	//Calculate params for next wakup
-	unsigned long periodTicks = (unsigned long)DL_Timer1hz * (unsigned int)DL_period / 1024 + OCR2A;	//Equal time intervals
-	cli();
-	OCR2A = periodTicks & 0xFF;
-	DL_periodOverflows = periodTicks >> 8;
-	if (DL_periodOverflows > 0) {
-		// Disable OCR2A interrupt if must wait for overflows
-		TIMSK2 &= ~0b00000010;
-	} else {
-		TIFR2 |= 0b00000010;
-		TIMSK2 |= 0b00000010;
+int keymap[][3]{
+	//min value, max value, char
+	{643-5,643+5,'_'},
+	{682-5,682+5,'^'},
+	{743-5,743+5,'<'},
+	{782-5,782+5,'o'},
+	{796-5,796+5,'>'}
+};
+char last_key;
+long key_debounce;
+char getkey(int analog) {
+	if(analog>796+5){
+		return 0;
 	}
-	sei();
-}*/
-void TS_waitConversion(int conversionDelay)
-{
-	//Calculate params for nested wakup
-	cli();
-	unsigned long conversionTicks = (unsigned long)DL_Timer1hz * conversionDelay / 1000 + TCNT2;	// Timer starts relative to current time.
-	OCR2B = conversionTicks & 0xFF;
-	TS_conversionOverflows = conversionTicks >> 8;
-	if (TS_conversionOverflows > 0) {
-		// Disable OCR2A interrupt if must wait for overflows
-		TIMSK2 &= ~0b00000100;
-	} else {
-		TIFR2 |= 0b00000100;
-		TIMSK2 |= 0b00000100;
-	}
-	sei();
-}
-ISR(TIMER2_COMPA_vect)
-{
-	//DL_startPeriod();
-	if (TIMSK2 & 0b00000100 || TS_conversionOverflows > 0) {
-		// If Nested timer not done, skip the beat.
-		return;
-	}
- 	T1.requestTemperatures();
-  	T2.requestTemperatures();
-  	T3.requestTemperatures();
-  	T4.requestTemperatures();
-	TS_waitConversion(TEMP_CONVERSION_DELAY);
-}
-
-ISR(TIMER2_COMPB_vect)
-{
-	cli();
-	TIMSK2 &= ~0b00000100;	//Do it once
-	sei();
-	// Loop through each device, print out temperature data
-	t1=T1.getTempCByIndex(0);
-	t2=T2.getTempCByIndex(0);
-	t3=T3.getTempCByIndex(0);
-	t4=T4.getTempCByIndex(0);
- 	T1.requestTemperatures();
-  	T2.requestTemperatures();
-  	T3.requestTemperatures();
-  	T4.requestTemperatures();
-	TS_waitConversion(TEMP_CONVERSION_DELAY);
-}
-
-ISR(TIMER2_OVF_vect)
-{
-/*	if (DL_periodOverflows) {
-		DL_periodOverflows--;
-		if (!DL_periodOverflows) {
-			// clean compare flag to prevent immediate interrupt
-			TIFR2 |= 0b00000010;
-			// enable OCR2A interrupt if must wait for overflows
-			TIMSK2 |= 0b00000010;
+	for(int i=0;i<5;i++) {
+		if(analog>=keymap[i][0] && analog<=keymap[i][1]) {
+			if(last_key==keymap[i][2]){
+				if(key_debounce<millis()) {
+					return (char)keymap[i][2];
+				} else {
+					return 0;
+				}
+			}
+			last_key=keymap[i][2];
+			key_debounce=millis()+10;
+			break;
 		}
 	}
-*/	if (TS_conversionOverflows) {
-		TS_conversionOverflows--;
-		if (!TS_conversionOverflows) {
-			// clean compare flag to prevent immediate interrupt
-			TIFR2 |= 0b00000100;
-			// enable OCR2B interrupt if must wait for overflows
-			TIMSK2 |= 0b00000100;
+	return 0;	
+}
+void switch_action(){
+// Manage drinkwater pump
+//t1 - availabe temperature
+//t2 - drinkwater temperature
+//t_on - temperature, when pump is always on
+//t_delta - minimum temperature difference for pump to switch on 
+
+
+// Monitor boiler activity
+//t3 - output
+//t4 - return
+//t_off_delta - temperature difference when switch boiler off
+//t_off_max - max temp when allowed to switch off
+
+}
+//<Initial>-<Temp>-<Drinkwater>-<Boler>
+
+// ID of the settings block
+#define CONFIG_VERSION "FTW"
+
+// Tell it where to store your config data in EEPROM
+#define CONFIG_START 0 
+
+// Example settings structure
+struct StoreStruct {
+  // The variables of your settings
+  float t_on; //- temperature, when pump is always on
+  float t_delta; //- minimum temperature difference for pump to switch on 
+// Monitor boiler activity
+  float t_off_delta; //- temperature difference when switch boiler off
+  float t_off_max; //- max temp when allowed to switch off
+  // This is for mere detection if they are your settings
+  char version_of_program[4]; // it is the last variable of the struct
+  // so when settings are saved, they will only be validated if
+  // they are stored completely.
+} settings = {
+  // The default values
+  70.0,
+  10.0,
+  0.5,
+  70.0,
+  CONFIG_VERSION
+};
+
+void saveConfig() {
+  for (unsigned int t=0; t<sizeof(settings); t++)
+  { // writes to EEPROM
+    EEPROM.update(CONFIG_START + t, *((char*)&settings + t));
+    // and verifies the data
+  //  if (EEPROM.read(CONFIG_START + t) != *((char*)&settings + t))
+  //  {
+      // error writing to EEPROM
+  //  }
+  }
+}
+void loadConfig() {
+  // To make sure there are settings, and they are YOURS!
+  // If nothing is found it will use the default settings.
+  if (//EEPROM.read(CONFIG_START + sizeof(settings) - 1) == settings.version_of_program[3] // this is '\0'
+      EEPROM.read(CONFIG_START + sizeof(settings) - 2) == settings.version_of_program[2] &&
+      EEPROM.read(CONFIG_START + sizeof(settings) - 3) == settings.version_of_program[1] &&
+      EEPROM.read(CONFIG_START + sizeof(settings) - 4) == settings.version_of_program[0])
+  { // reads settings from EEPROM
+    for (unsigned int t=0; t<sizeof(settings); t++)
+      *((char*)&settings + t) = EEPROM.read(CONFIG_START + t);
+  } else {
+    // settings aren't valid! will overwrite with default settings
+    saveConfig();
+  }
+}
+char STATE;
+char EDIT;
+char ACTIVE_FIELD;
+void input(char FIELD,float value){
+	uint8_t cursorX;
+	uint8_t cursorY;
+	if(ACTIVE_FIELD==FIELD) {
+		LCD.print('>');
+		if(EDIT) {
+			cursorX=LCD.cursorX;
+			cursorY=LCD.cursorY;
+			LCD.print("\x80\x80\x80\x80\x80");
+			LCD.cursorX=cursorX;
+			LCD.cursorY=cursorY;
+			LCD.setMode(XOR);
 		}
+
+	} else {
+		LCD.print(' ');
 	}
-//	digitalWrite(HARTBEAT_LED,!digitalRead(HARTBEAT_LED));
-
+	LCD.println(value);
+	LCD.setMode(OVERWRITE);
 }
-//Revrite to Timer 0
-/*unsigned long _tAC_time; // Used to track end note with timer when playing note in the background.
-
-    #define PWMT1AMASK DDB1
-    #define PWMT1BMASK DDB2
-    #define PWMT1DREG DDRB
-    #define PWMT1PORT PORTB
-    
-void noToneAC() {
-  TIMSK1 &= ~_BV(OCIE1A);     // Remove the timer interrupt.
-  TCCR1B  = _BV(CS11);        // Default clock prescaler of 8.
-  TCCR1A  = _BV(WGM10);       // Set to defaults so PWM can work like normal (PWM, phase corrected, 8bit).
-  PWMT1PORT &= ~_BV(PWMT1AMASK); // Set timer 1 PWM pins to LOW.
-}
-
-void toneAC(unsigned long frequency, unsigned long length) {
-  if (frequency == 0) { noToneAC(); return; }                // If frequency is 0, turn off sound and return.
-  
-  PWMT1DREG |= _BV(PWMT1AMASK); // Set timer 1 PWM pins to OUTPUT (because analogWrite does it too).
-
-  uint8_t prescaler = _BV(CS10);                 // Try using prescaler 1 first.
-  unsigned long top = F_CPU / frequency / 2 - 1; // Calculate the top.
-  if (top > 65535) {                             // If not in the range for prescaler 1, use prescaler 256 (122 Hz and lower @ 16 MHz).
-    prescaler = _BV(CS12);                       // Set the 256 prescaler bit.
-    top = top / 256 - 1;                         // Calculate the top using prescaler 256.
-  }
-  unsigned int duty = top >> 1;                      // 50% duty cycle (loudest and highest quality).
-
-  if (length > 0) {                // Background tone playing, returns control to your sketch.
-    _tAC_time = millis() + length; // Set when the note should end.
-    TIMSK1 |= _BV(OCIE1A);         // Activate the timer interrupt.
-  }
-
-  ICR1   = top;                         // Set the top.
-  if (TCNT1 > top) TCNT1 = top;         // Counter over the top, put within range.
-  TCCR1B = _BV(WGM13)  | prescaler;     // Set PWM, phase and frequency corrected (top=ICR1) and prescaler.
-  OCR1A  = OCR1B = duty;                // Set the duty cycle (volume).
-  TCCR1A = _BV(COM1A1) ; // Inverted/non-inverted mode (AC).
-
-}
-
-ISR(TIMER1_COMPA_vect) { // Timer interrupt vector.
-  if (millis() >= _tAC_time) noToneAC(); // Check to see if it's time for the note to end.
-}
-*/
-void requestEvent(void) {
-	// Send all data
-//	Wire.write((const uint8_t *)TS.tempRaw,sizeof(uint16_t)*TS.count);
+void render(char key) {
+	switch(STATE) {
+	case 'I':
+		LCD.setFont(&font5x8[0][0],5,8,F_LEFT_RIGHT);
+		LCD.Clear();
+		LCD.GoTo(0,0);
+		LCD.println("git@githu");
+		LCD.println("b.com:uld");
+		LCD.println("isa/pump_");
+		LCD.println("switch.git");
+		LCD.Render();
+		switch(key){
+			case '>': STATE='T';EDIT=0;ACTIVE_FIELD=0; break;
+			case '<': STATE='B';EDIT=0;ACTIVE_FIELD=0; break;
+		}
+		break;
+	case 'T':
+		LCD.setFont(&BIGSERIF[0][0],8,14,F_UP_DOWN);
+		LCD.Clear();
+		LCD.GoTo(0,0);
+		LCD.println(t1);
+		LCD.println(t2);
+		LCD.println(t3);
+		LCD.println(t4);
+		LCD.println(key);
+		LCD.Render();
+		switch(key){
+			case '>': STATE='D';EDIT=0;ACTIVE_FIELD=0; break;
+			case '<': STATE='I';EDIT=0;ACTIVE_FIELD=0; break;
+		}
+		break;
+	case 'D':
+		LCD.Clear();
+		LCD.setFont(&font5x8[0][0],5,8,F_LEFT_RIGHT);
+		//LCD.GoTo(0,0);
+		LCD.println("Drinkwater");
+		LCD.setFont(&BIGSERIF[0][0],8,14,F_UP_DOWN);
+		//LCD.GoTo(0,8);
+		LCD.setFont(&font5x8[0][0],5,8,F_LEFT_RIGHT);
+		LCD.println("Always on");
+		LCD.setFont(&BIGSERIF[0][0],8,14,F_UP_DOWN);
+		input(0,settings.t_on);
+		LCD.setFont(&font5x8[0][0],5,8,F_LEFT_RIGHT);
+		LCD.println("Delta on");
+		LCD.setFont(&BIGSERIF[0][0],8,14,F_UP_DOWN);
+		input(1,settings.t_delta);
+		LCD.setFont(&font5x8[0][0],5,8,F_LEFT_RIGHT);
+		LCD.print("t3 ");LCD.println(t3);
+		LCD.print("t4 ");LCD.println(t4);
+		LCD.Render();
+		switch(key){
+		case '>': STATE='B';EDIT=0;ACTIVE_FIELD=0; break;
+		case '<': STATE='T';EDIT=0;ACTIVE_FIELD=0; break;
+		case 'o': 
+			  if(EDIT){
+				  saveConfig();
+				  EDIT=0;
+			  } else {
+				  EDIT=1;
+			  }
+			  break;
+		case '^': 
+			  if(EDIT){
+				 if(ACTIVE_FIELD==0) {
+					settings.t_on+=0.5;
+				 } else {
+					settings.t_delta+=0.5;
+				 }	 
+			  } else {
+				 if(ACTIVE_FIELD==0) { ACTIVE_FIELD=1; }
+				 else { ACTIVE_FIELD=0; }
+			  }
+			  break;
+		case '_': 
+			  if(EDIT){
+				 if(ACTIVE_FIELD==0) {
+					settings.t_on-=0.5;
+				 } else {
+					settings.t_delta-=0.5;
+				 }	 
+			  } else {
+				 if(ACTIVE_FIELD==0) { ACTIVE_FIELD=1; }
+				 else { ACTIVE_FIELD=0; }
+			  }
+			  break;
+		}
+		break;
+	case 'B':
+		LCD.Clear();
+		LCD.setFont(&font5x8[0][0],5,8,F_LEFT_RIGHT);
+		//LCD.GoTo(0,0);
+		LCD.println("Boiler");
+		LCD.setFont(&BIGSERIF[0][0],8,14,F_UP_DOWN);
+		//LCD.GoTo(0,8);
+		LCD.setFont(&font5x8[0][0],5,8,F_LEFT_RIGHT);
+		LCD.println("Max delta off");
+		LCD.setFont(&BIGSERIF[0][0],8,14,F_UP_DOWN);
+		input(0,settings.t_off_delta);
+		LCD.setFont(&font5x8[0][0],5,8,F_LEFT_RIGHT);
+		LCD.println("Max temp off");
+		LCD.setFont(&BIGSERIF[0][0],8,14,F_UP_DOWN);
+		input(1,settings.t_off_max);
+		LCD.setFont(&font5x8[0][0],5,8,F_LEFT_RIGHT);
+		LCD.print("t1 ");LCD.println(t1);
+		LCD.print("t2 ");LCD.println(t2);
+		LCD.Render();
+		switch(key){
+		case '>': STATE='I';EDIT=0; break;
+		case '<': STATE='D';EDIT=0; break;
+		case 'o': 
+			  if(EDIT){
+				  saveConfig();
+				  EDIT=0;
+			  } else {
+				  EDIT=1;
+			  }
+			  break;
+		case '^': 
+			  if(EDIT){
+				 if(ACTIVE_FIELD==0) {
+					settings.t_off_delta+=0.5;
+				 } else {
+					settings.t_off_max+=0.5;
+				 }	 
+			  } else {
+				 if(ACTIVE_FIELD==0) { ACTIVE_FIELD=1; }
+				 else { ACTIVE_FIELD=0; }
+			  }
+			  break;
+		case '_': 
+			  if(EDIT){
+				 if(ACTIVE_FIELD==0) {
+					settings.t_off_delta-=0.5;
+				 } else {
+					settings.t_off_max-=0.5;
+				 }	 
+			  } else {
+				 if(ACTIVE_FIELD==0) { ACTIVE_FIELD=1; }
+				 else { ACTIVE_FIELD=0; }
+			  }
+			  break;
+		}
+		break;
+	}
 }
 int main(void) {
 	cli();
 	SPCR=0;//disable SPI
-	TCCR2A = 0b00000000;	//Normal Timer2 mode.
-	TCCR2B = 0b00000111;	//Prescale 16Mhz/1024
-	TIMSK2 = 0b00000001;	//Enable overflow interrupt
 	sei();			//Enable interrupts
 	pinMode(2,OUTPUT);
+	pinMode(3,OUTPUT);
 	pinMode(4,OUTPUT);
 	digitalWrite(2,HIGH); //Relay off
 	digitalWrite(4,HIGH); //Relay off
 	init();
+	Serial.begin(9600);
+	LCD.begin();
+	STATE='I'; //Init	
+	loadConfig();
 	T1.begin();
-	T1.setWaitForConversion(false);
 	T1.setResolution(TEMP_PRECISION);
+	T1.setWaitForConversion(false);
 	T2.begin();
 	T2.setResolution(TEMP_PRECISION);
 	T2.setWaitForConversion(false);
@@ -187,25 +318,72 @@ int main(void) {
 	T4.begin();
 	T4.setResolution(TEMP_PRECISION);
 	T4.setWaitForConversion(false);
-	LCD.begin();
-	long start=millis();
-	LCD.setFont(&font5x8[0][0],5,8,F_LEFT_RIGHT);
-	TS_waitConversion(TEMP_CONVERSION_DELAY);
-//	DL_startPeriod();
-	while (1) {
-	LCD.Clear();
-	LCD.GoTo(0,0);
-	LCD.println(t1);
-	LCD.println(t2);
-	LCD.println(t3);
-	LCD.println(t4);
-	LCD.println(analogRead(A3));
-     // 	toneAC(analogRead(A3),  10);
-//	LCD.print("TPS ");
-//	LCD.print((float)1000000.0/(millis()-start),4);
+ 	T1.requestTemperatures();
+  	T2.requestTemperatures();
+  	T3.requestTemperatures();
+  	T4.requestTemperatures();
+	LCD.println("delay");
 	LCD.Render();
-	//digitalWrite(3,!(millis()&0x100));
-	//digitalWrite(4,!(millis()&0x100));
-	delay(100);
+	delay(TEMP_CONVERSION_DELAY);
+	
+	LCD.println("go");
+	LCD.Render();
+	long Last_Temp=millis();
+	long Last_Render=millis();
+	char key=0;
+	char key_prev=0;	
+	char key_event=0;	
+	while (1) 
+	{
+		if(millis()-Last_Temp>TEMP_CONVERSION_DELAY)
+		{
+			long Last_Temp=millis();
+			t1=T1.getTempCByIndex(0);
+			t2=T2.getTempCByIndex(0);
+			t3=T3.getTempCByIndex(0);
+			t4=T4.getTempCByIndex(0);
+			T1.requestTemperatures();
+			T2.requestTemperatures();
+			T3.requestTemperatures();
+			T4.requestTemperatures();
+			// Pump switch calculations go here
+		}
+
+		char key=getkey(analogRead(A3));
+		if(key && key!=key_prev) {
+			key_event=key;
+		} else {
+			key_event=0;
+		}
+		key_prev=key;
+		if(key_event) {
+			tone(3,2000,100);
+		}
+		if(millis()-Last_Render>100) {
+			switch_action();
+			render(key_event);
+			key_event=0; // Clear event
+			if(Serial.available()>0) {
+				Serial.print(t1,DEC);
+				Serial.print(',');
+				Serial.print(t2,DEC);
+				Serial.print(',');
+				Serial.print(t3,DEC);
+				Serial.print(',');
+				Serial.print(t4,DEC);
+				Serial.print(',');
+				Serial.print(digitalRead(8),DEC);
+				Serial.print(',');
+				Serial.print(digitalRead(7),DEC);
+				Serial.print(',');
+				Serial.print(digitalRead(6),DEC);
+				Serial.print(',');
+				Serial.print(digitalRead(5),DEC);
+				Serial.print('\n');
+				while(Serial.available()>0) {
+					Serial.read();
+				}
+			}
+		}
 	}
 }

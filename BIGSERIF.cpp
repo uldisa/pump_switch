@@ -1,6 +1,4 @@
-#ifndef BIGSERIF_H
-#define BIGSERIF_H
-#include <avr/pgmspace.h>
+#include "BIGSERIF.h"
 const char BIGSERIF[][14] PROGMEM =
 {
 	{ /*	32	' ' */
@@ -1538,6 +1536,21 @@ const char BIGSERIF[][14] PROGMEM =
 		0b00000000,
 		0b00000000,
 		0b00000000
+	},
+	{ /*	128	'' */
+		0b11111111,
+		0b11111111,
+		0b11111111,
+		0b11111111,
+		0b11111111,
+		0b11111111,
+		0b11111111,
+		0b11111111,
+		0b11111111,
+		0b11111111,
+		0b11111111,
+		0b11111111,
+		0b11111111,
+		0b00000000
 	}
 };
-#endif

@@ -19,7 +19,7 @@
 #define F_UP_DOWN 0 
 #define F_LEFT_RIGHT 1
 extern uint8_t PCD8544_FB[6][84];
-enum write_mode { OVERWRITE, XOR };
+enum write_mode { OVERWRITE, XOR , INVERT };
 class PCD8544:public Print
 {
   public:
