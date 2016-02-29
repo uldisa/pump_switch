@@ -126,11 +126,11 @@ void switch_action(void){
 //t_on - temperature, when pump is always on
 //t_delta - minimum temperature difference for pump to switch on 
 	if(pump_is_on) {
-		if(/*t1+t1_histeresis-t2<settings.t_delta &&*/ t1+t1_histeresis<settings.t_on) {
+		if(t1+t1_histeresis-t2<settings.t_delta && t1+t1_histeresis<settings.t_on) {
 			pump_is_on=false;
 		}
 	} else {
-		if(/*t1-t2>=settings.t_delta ||*/ t1>=settings.t_on ) {
+		if(t1-t2>=settings.t_delta || t1>=settings.t_on ) {
 			pump_is_on=true; // swith on immediate
 		}
 	}
@@ -313,7 +313,13 @@ void render(char key) {
 		LCD.print("t3< ");LCD.println(t3);
 		LCD.print("t4> ");LCD.println(t4);
 		LCD.setFont(&BIGSERIF[0][0],8,14,F_UP_DOWN);
-		draw_fire();LCD.println(fire_is_on);
+		draw_fire();LCD.print(fire_is_on);
+		LCD.setFont(&font5x8[0][0],5,8,F_LEFT_RIGHT);
+		float area=last_deltas[0]+last_deltas[1]+last_deltas[2]+last_deltas[3]
+		+last_deltas[4]+last_deltas[5]+last_deltas[6]+last_deltas[7]
+		+last_deltas[8]+last_deltas[9]+last_deltas[10]+last_deltas[11]
+		+last_deltas[12]+last_deltas[13]+last_deltas[14]+last_deltas[15];
+		LCD.print(area/16.0);
 		LCD.Render();
 		switch(key){
 		case '>': STATE='I';EDIT=0; break;
@@ -400,6 +406,15 @@ int main(void) {
 	LCD.println("delay");
 	LCD.Render();
 	delay(TEMP_CONVERSION_DELAY);
+	t1=T1.getTempCByIndex(0);
+	t2=T2.getTempCByIndex(0);
+	t3=T3.getTempCByIndex(0);
+	t4=T4.getTempCByIndex(0);
+	last_deltas[0]=last_deltas[1]=last_deltas[2]=last_deltas[3]
+		=last_deltas[4]=last_deltas[5]=last_deltas[6]=last_deltas[7]
+		=last_deltas[8]=last_deltas[9]=last_deltas[10]=last_deltas[11]
+		=last_deltas[12]=last_deltas[13]=last_deltas[14]=last_deltas[15]=(t3>=t4?t3-t4:0);
+	
 	
 	LCD.println("go");
 	LCD.Render();
@@ -441,9 +456,9 @@ int main(void) {
 			// Trigger each second
 			Last_second=second_now;
 			// Calculate temperature
-			if(! second_now%60 ) {
+			if(!(second_now%60) ) {
 				// Trigger each minute
-				last_deltas[(second_now/60)&0xf]=(t4>=t3?t4-t3:0);
+				last_deltas[(second_now/60)&0xf]=(t3>=t4?t3-t4:0);
 			}
 			switch_action();
 		}
