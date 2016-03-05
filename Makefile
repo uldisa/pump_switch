@@ -20,7 +20,7 @@ include lib.mk
 #endif
 
 #CPPFLAGS+=-Wall -Wextra -I. -Os -fno-exceptions -ffunction-sections -fdata-sections
-CPPFLAGS+=-I. -g -Os -w -fno-exceptions -ffunction-sections -fdata-sections -MMD
+CPPFLAGS+=-I. -g -Os -w -Wall -fno-exceptions -ffunction-sections -fdata-sections -MMD
 
 font5x8.o:font5x8.h
 main.o:PCD8544.o BIGSERIF.o font5x8.o libcore.a libDallasTemperature.a libOneWire.a libSPI.a libEEPROM.a

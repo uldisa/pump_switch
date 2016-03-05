@@ -114,7 +114,7 @@ void PCD8544::putChar(uint8_t c)
 		
 		bank=cursorX/8;	
 		off=cursorX%8;	
-		for(i=0;i<fontHight;i++) {
+		for(i=0;i<fontHight && cursorY+i<84;i++) {
 			mask=0xFF00;
 			if(font_direction==F_UP_DOWN) {
 				data=pgm_read_byte_near(&(font[(c-32)*fontHight+i]));

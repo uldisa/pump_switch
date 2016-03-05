@@ -42,6 +42,7 @@ char getkey(int analog) {
 		if(analog>=keymap[i][0] && analog<=keymap[i][1]) {
 			if(last_key==keymap[i][2]){
 				if(key_debounce<millis()) {
+	tone(3,4000,5);
 					return (char)keymap[i][2];
 				} else {
 					return 0;
@@ -69,18 +70,20 @@ struct StoreStruct {
 // Monitor boiler activity
   float t_off_delta; //- temperature difference when switch boiler off
   float t_on_delta; //- temperature difference when switch boiler off
-  float t_off_max; //- max temp when allowed to switch off
+  float t_off_max; //- max temp when allowed to switch boler off
+  float t_on_min; //- in temp when allowed to switch boiler on
   // This is for mere detection if they are your settings
   char version_of_program[4]; // it is the last variable of the struct
   // so when settings are saved, they will only be validated if
   // they are stored completely.
 } settings = {
   // The default values
-  60.0,
-  10.0,
-  0.5,
-  3.5,
-  65.0,
+  70.0,
+  8.0,
+  3.0,
+  6.0,
+  67.0,
+  50.0,
   CONFIG_VERSION
 };
 
@@ -110,6 +113,8 @@ void loadConfig() {
     saveConfig();
   }
 }
+char STATE;
+char EDIT;
 #define BOILER_RELAY_PIN 2
 #define PUMP_RELAY_PIN 4
 #define t1_histeresis 1.0
@@ -118,7 +123,7 @@ bool pump_is_on;
 float last_deltas[16]={
 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
 };
-long boiler_off;
+long boiler_power_off;
 void switch_action(void){
 // Manage drinkwater pump
 //t1 - availabe temperature
@@ -148,14 +153,10 @@ void switch_action(void){
 		+last_deltas[8]+last_deltas[9]+last_deltas[10]+last_deltas[11]
 		+last_deltas[12]+last_deltas[13]+last_deltas[14]+last_deltas[15];
 	
-	if(millis()>boiler_off) {
-		digitalWrite(BOILER_RELAY_PIN,HIGH); //Relay off by default
-	}
 	if(fire_is_on) {
 		if(area<settings.t_off_delta*16.0 && t3<=settings.t_off_max) {
 			fire_is_on=false;
-			boiler_off=millis()+3000; // Off for 3 seconds
-			digitalWrite(BOILER_RELAY_PIN,LOW); //Relay on for 1 minute 
+			boiler_power_off=true; 
 			tone(3,3000,1000);
 		}	
 	} else {
@@ -163,11 +164,18 @@ void switch_action(void){
 			fire_is_on=true;
 		}
 	}
+	if(boiler_power_off) {
+		if(t3<=settings.t_on_min) {
+			boiler_power_off=false; 
+		}
+		if(!EDIT) {
+			STATE='T';
+		}
+	}
+	digitalWrite(BOILER_RELAY_PIN,!boiler_power_off); 
 }
-char STATE;
-char EDIT;
 uint8_t ACTIVE_FIELD;
-void input(char FIELD,float value){
+void input(uint8_t FIELD,float value){
 	uint8_t cursorX;
 	uint8_t cursorY;
 	if(ACTIVE_FIELD==FIELD) {
@@ -230,7 +238,19 @@ void render(char key) {
 		LCD.println(t4);
 		draw_pump();
 		draw_fire();
+		if(boiler_power_off){
+			if(millis()&0x100) {
+				LCD.println(" Off");
+			} else {
+				LCD.println("");
+			}
+			LCD.setFont(&font5x8[0][0],5,8,F_LEFT_RIGHT);
+			LCD.println("Power off");
+		}
 		LCD.Render();
+		if(key) {
+			boiler_power_off=false;// Power on boiler
+		}
 		switch(key){
 			case '>': STATE='D';EDIT=0;ACTIVE_FIELD=0; break;
 			case '<': STATE='I';EDIT=0;ACTIVE_FIELD=0; break;
@@ -302,13 +322,14 @@ void render(char key) {
 		LCD.setFont(&BIGSERIF[0][0],8,14,F_UP_DOWN);
 		//LCD.GoTo(0,8);
 		LCD.setFont(&font5x8[0][0],5,8,F_LEFT_RIGHT);
-		LCD.println("Delta off/on");
+		LCD.println("D off/on");
 		input(0,settings.t_off_delta);
 		input(1,settings.t_on_delta);
 		LCD.setFont(&font5x8[0][0],5,8,F_LEFT_RIGHT);
-		LCD.println("Max off");
-		LCD.setFont(&BIGSERIF[0][0],8,14,F_UP_DOWN);
+		LCD.println("T off/on");
+		LCD.setFont(&font5x8[0][0],5,8,F_LEFT_RIGHT);
 		input(2,settings.t_off_max);
+		input(3,settings.t_on_min);
 		LCD.setFont(&font5x8[0][0],5,8,F_LEFT_RIGHT);
 		LCD.print("t3< ");LCD.println(t3);
 		LCD.print("t4> ");LCD.println(t4);
@@ -344,10 +365,13 @@ void render(char key) {
 				case 2:
 					settings.t_off_max+=0.5;
 					break;
+				case 3:
+					settings.t_on_min+=0.5;
+					break;
 				}
 			  } else {
 				if(ACTIVE_FIELD){ACTIVE_FIELD--;}
-				else (ACTIVE_FIELD=2);	
+				else (ACTIVE_FIELD=3);	
 			  }
 			  break;
 		case '_': 
@@ -362,9 +386,12 @@ void render(char key) {
 				case 2:
 					settings.t_off_max-=0.5;
 					break;
+				case 3:
+					settings.t_on_min-=0.5;
+					break;
 				}
 			  } else {
-				 ACTIVE_FIELD=(ACTIVE_FIELD+1)%3;
+				 ACTIVE_FIELD=(ACTIVE_FIELD+1)%4;
 			  }
 			  break;
 		}
@@ -385,6 +412,7 @@ int main(void) {
 	LCD.begin();
 	fire_is_on=false;//Assuma no fire, no power down event.
 	pump_is_on=true;//Drinkwater relay os on. External control is possible.
+	boiler_power_off=false;
 	STATE='I'; //Init	
 	loadConfig();
 	T1.begin();
@@ -441,7 +469,7 @@ int main(void) {
 			// Pump switch calculations go here
 		}
 
-		char key=getkey(analogRead(A3));
+		key=getkey(analogRead(A3));
 		if(key && key!=key_prev) {
 			key_event=key;
 		} else {
