@@ -162,11 +162,12 @@ void switch_action(void){
 	} else {
 		if(area>=settings.t_on_delta*16.0) {
 			fire_is_on=true;
+			boiler_power_off=false; // Enable boiler power if resuidual heat raises. 
 		}
 	}
 	if(boiler_power_off) {
 		if(t3<=settings.t_on_min) {
-			boiler_power_off=false; 
+			boiler_power_off=false; // Power on boiler assuming it is cooled down.
 		}
 		if(!EDIT) {
 			STATE='T';
